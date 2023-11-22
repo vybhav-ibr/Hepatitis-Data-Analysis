@@ -1,0 +1,256 @@
+---
+title: "INT-232 Project Dashboard"
+output: html_document
+date: "2022-11-07"
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+library(viridisLite)
+library(sqldf)
+library(flexdashboard)
+library(MASS)
+```
+
+## Datatset
+
+This dataset contains the data of 155 patients who were diagnosed with Hepatitis . This data has 20 attributes and a majority of which are of factor datatype.
+
+123 of these patients are alive and 32 of them are dead.Of these patients 139 are Men and 16 are Female. There are a total of 166 missing values from this table.
+
+```{r include=TRUE}
+data=read.csv("hepatitis with headings.txt")
+
+```
+
+#### Checking for null values and committing them:
+
+There are a total of 167 null values in the data set, The rows containing the null values are ommited as per standard statistical approaches
+
+```{r include=TRUE}
+
+sum(is.na(data))
+data=na.omit(data)
+sum(is.na(data))
+```
+
+## Data Cleaning
+
+Since the numeric columns also contain outliers they need to be removed. In this following code the outliers are removed manually, but functions also could be used
+
+```{r }
+par(mfrow=c(1,4))
+boxplot(data$SGOT)
+boxplot(data$PROTIME)
+boxplot(data$ALK.PHOSPHATE)
+boxplot(data$ALBUMIN)
+##SGOT
+oneq=quantile(data$SGOT,0.25,na.rm = TRUE)
+threeq=quantile(data$SGOT,.75,na.rm = TRUE)
+rule1=as.integer(threeq+1.5*IQR(data$SGOT,na.rm=TRUE))
+rule2=as.integer(oneq-1.5*IQR(data$SGOT,na.rm=TRUE))
+data$SGOT[data$SGOT>rule1]=rule1
+data$SGOT[data$SGOT<rule2]=rule2
+
+#PROTIME
+oneq=quantile(data$PROTIME,0.25,na.rm = TRUE)
+threeq=quantile(data$PROTIME,.75,na.rm = TRUE)
+rule1=as.integer(threeq+1.5*IQR(data$PROTIME,na.rm=TRUE))
+rule2=as.integer(oneq-1.5*IQR(data$PROTIME,na.rm=TRUE))
+data$PROTIME[data$PROTIME>rule1]=rule1
+data$PROTIME[data$PROTIME<rule2]=rule2
+
+#ALK.PHOSPHATE
+oneq=quantile(data$ALK.PHOSPHATE,0.25,na.rm = TRUE)
+threeq=quantile(data$ALK.PHOSPHATE,.75,na.rm = TRUE)
+rule1=as.integer(threeq+1.5*IQR(data$ALK.PHOSPHATE,na.rm=TRUE))
+rule2=as.integer(oneq-1.5*IQR(data$ALK.PHOSPHATE,na.rm=TRUE))
+data$ALK.PHOSPHATE[data$ALK.PHOSPHATE>rule1]=rule1
+data$ALK.PHOSPHATE[data$ALK.PHOSPHATE<rule2]=rule2
+
+#ALBUMIN
+oneq=quantile(data$ALBUMIN,0.25,na.rm = TRUE)
+threeq=quantile(data$ALBUMIN,.75,na.rm = TRUE)
+rule1=as.integer(threeq+1.5*IQR(data$ALBUMIN,na.rm=TRUE))
+rule2=as.integer(oneq-1.5*IQR(data$ALBUMIN,na.rm=TRUE))
+data$ALBUMIN[data$ALBUMIN>rule1]=rule1
+data$ALBUMIN[data$ALBUMIN<rule2]=rule2
+
+par(mfrow=c(1,4))
+boxplot(data$SGOT)
+boxplot(data$PROTIME)
+boxplot(data$ALK.PHOSPHATE)
+boxplot(data$ALBUMIN)
+
+```
+
+# Conclusions from the data
+
+Firstly the Mean death rate(MDR) is calculated, the effect of other attributes are compared with this MDR do determine if that attribute has a significant effect on the death rate of the patient
+
+```{r}
+MDR=as.numeric(sqldf("select COUNT(CLASS) from data where CLASS=1")
+                      /sqldf("select COUNT(CLASS) from data"))
+
+```
+
+## Q1:What percentage of women and men died
+
+The death rate of men and women is calculated which are then plotted.
+
+```{r }
+dead_and_male=as.numeric(sqldf("select COUNT(CLASS) from data where CLASS= 1 AND SEX= 1")
+                         /sqldf("select COUNT(CLASS) from data where SEX= 1")) 
+
+dead_and_female=as.numeric(sqldf("select COUNT(CLASS) from data where CLASS= 1 AND SEX= 2")
+                           /sqldf("select COUNT(CLASS) from data where SEX= 2")) 
+
+barplot(c(dead_and_female,dead_and_male),main = "%Dead",names.arg = c('Female','Male'))
+
+a=chisq.test(table(data$CLASS,data$SEX))
+print(a)
+related="not related"
+if(a$p.value<.05)
+  related="related"
+```
+
+conclusion: As we can see from the graphs, no of the women died, while 23.35 percent of men died.
+if numbers of entries of a variable for each class less than 2, ch-squared will not work
+
+```{r}
+paste("Based on the chisquared test we can say that the attributes death and gender are",related)
+```
+
+## Q2:Comparison of death rates in steroid users, Anti-Viral medication vs average death rate
+
+The death rate steroid users and anti-viral medication users are calculated which are then plotted against MDR.
+
+```{r }
+dead_steroid=as.numeric(sqldf("select COUNT(CLASS) from data where CLASS= 1 AND STEROID= 2")/
+                        sqldf("select COUNT(CLASS) from data where STEROID= 2"))
+dead_av=as.numeric(sqldf("select COUNT(CLASS) from data where CLASS = 1 AND ANTIVIRALS= 2")/
+                     sqldf("select COUNT(CLASS) from data where ANTIVIRALS"))
+barplot(c(dead_steroid,dead_av,MDR),main="%steroid_dead vs total_dead",names.arg = c('Steroid Users','AV Users','Mean death rate'))
+
+a=chisq.test(table(data$CLASS,data$STEROID))
+print(a)
+related=" not related"
+if(a$p.value<.05)
+  related="related"
+
+```
+
+we can see from the data that steroid users and AV users don't seem to have a higher death rate. This bias is there because 91% percent of steroid users were male and men have a death rate of 23% while women have a death rate of 0% percent
+
+```{r}
+paste("Based on the chisquared test we can say that the attributes death and steroid use are",related)
+```
+
+## Q3:Comparison of death rates in Older people(age\>60) vs average death rate
+
+The death rate patients older than sixty is calculated, which is then plotted against MDR
+
+```{r }
+dead_age=as.numeric(sqldf("select COUNT(CLASS) from data where CLASS = 1 AND AGE >= 60")/
+                      sqldf("select COUNT(CLASS) from data WHERE AGE>=60 "))
+barplot(c(dead_age,MDR),main="%Age_dead vs Total dead",names.arg = c('Older than 60','Mean death rate'))
+
+a=chisq.test(table(data$CLASS,data$AGE))
+print(a)
+related="are not related"
+if(a$p.value<.05)
+  related="related"
+```
+
+21.42 percent of people older than 60 died, while the average death rate is 20.64 percent . Which means that old age does not have an effect on the survival rate of hepatitis
+
+```{r}
+paste("Based on the chisquared test we can say that the attributes death and age are",related)
+```
+
+## Q4:Comparison of death rates in patients who exhibited symptoms vs average death rate
+
+For this we will plot two plots, One plot will compare death rate of patients with any one of the three symptoms the second plot will comapre death rate of patients with all of the symptoms
+
+```{r }
+dead_onesymtoms=as.numeric(sqldf("select COUNT(CLASS) from data where CLASS = 1 AND (FATIGUE=1 OR MALAISE=1 OR ANOREXIA=1)")
+                        /sqldf("select COUNT(CLASS) from data where (FATIGUE=1 OR MALAISE=1 OR ANOREXIA=1) "))
+
+# either=c()
+# for(int i=0;i<length(data$FATIGUE);i++)
+# {
+#   either<-c(either,(data$FATIGUE[i],data$MALAISE[i],data$ANOREXIA[i]))
+# }
+data$FATIGUE[data$FATIGUE!=1]=0
+data$MALAISE[data$MALAISE!=1]=0
+data$ANOREXIA[data$ANOREXIA!=1]=0
+either=as.numeric(data$FATIGUE|
+                              data$MALAISE|data$ANOREXIA)
+a=chisq.test(table(data$CLASS,either))
+related="anot related"
+if(a$p.value<.05)
+  related="related"
+print(a$p.value)
+
+```
+
+We can see that 29.7 percent of People with any one of the three symptoms died Which means that by the time the symptoms appear the hepatitis is harder to recover from
+
+```{r}
+paste("Based on the chisquared test we can say that the attributes death and 'having at least one symptom' are",related)
+```
+
+```{r }
+dead_allsymtoms=as.numeric(sqldf("select COUNT(CLASS) from data where CLASS = 1 AND (FATIGUE=1 
+                                 AND MALAISE=1 AND ANOREXIA=1)")
+                           /sqldf("select COUNT(CLASS) from data where (FATIGUE=1 AND MALAISE=1 AND ANOREXIA=1) "))
+
+either=as.numeric(data$FATIGUE&
+                              data$MALAISE&data$ANOREXIA)
+a=chisq.test(table(data$CLASS, either))
+print(a)
+related="not related"
+if(a$p.value<.05)
+  related="related"
+
+```
+
+We can see that 33.6 percent of People with any one of the three symptoms died Which means that if all of the symptoms appear the hepatitis is even severe
+
+```{r}
+paste("Based on the chisquared test we can say that the attributes death and 'having all the symptoms' are",related)
+```
+
+## Q5:PROTIME level comparison in dead vs alive people
+
+```{r }
+prot_alive=as.matrix.data.frame(sqldf("select protime from data where class=2"))
+prot_dead=as.matrix.data.frame(sqldf("select protime from data where class=1"))
+
+prot_alive_list=sort(as.vector(prot_alive))
+prot_dead_list=sort(as.vector(prot_dead))
+
+plot(prot_alive_list,type = "l",col = c("Green"),xlim = c(0,40),main = "ALK",lwd=4,ylab="ALK.Phosphate levels")
+lines(prot_dead_list,type="l",col ="Red",lwd=4)
+```
+
+We can see that our data also hints at the same conclusion. The PROTIME of dead patients(RED) are higher than that of alive patients(GREEN).
+
+Note: There is some portion of the data which says otherwise, but we have to keep in mind that PROTIME levels of men are different from PROTIME levels of women
+
+## Q6:ALK.PHOSPHATE level comparison in dead vs alive people
+
+```{r }
+ap_alive=as.matrix.data.frame(sqldf("select [alk.phosphate] from data where class=2"))
+ap_dead=as.matrix.data.frame(sqldf("select [alk.phosphate] from data where class=1"))
+
+ap_alive_list=sort(as.vector(ap_alive))
+ap_dead_list=sort(as.vector(ap_dead))
+
+plot(ap_alive_list,type = "l",col = c("Green"),xlim = c(0,40),main = "ALK",lwd=4 ,ylab="ALK.Phosphate levels")
+lines(ap_dead_list,type="l",col ="Red",lwd=4)
+```
+
+We can see that ALK.phosphate levels of dead(RED) is higher than that of alive(GREEN) patients, which indicates that ALK.phosphate levels increase with severity of hepatitis
+
+Which is in parallel with the data available from www.msdmanuals.com
